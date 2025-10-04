@@ -1,21 +1,36 @@
-body {
-    margin: 0;
+html{
+  background-color: #f8f8f8;
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin-bottom: 20px;
+}
+
+body{
+  width: fit-content;
+  border: 1px solid #dee2e6;
+  font-size: 88%;
+  user-select: auto;
+  background-color: white;
+  padding: 0.5em;
 }
 
 .esc-receipt {
-  border: 1px solid #888;
+  /*border: 1px solid #888;*/
   font-family: monospace;
   /*margin: 1em;*/
-  padding: 1em;
+  /*padding: 1em;*/
   /*min-width: 28em;*/
-  width: 80mm; /* 80mm is the width of a paper receipt.  Other sizes include 52mm */
-  transform: scale(1.25);
-  transform-origin: top left;
+  /*width: 80mm;*/ /* 80mm is the width of a paper receipt.  Other sizes include 52mm */
+  /*transform: scale(1.25);*/
+  /*transform-origin: top left;*/
+  min-width: 28em;
   display: inline-block;
 }
 
 .esc-line {
-  white-space: pre;
+  /*white-space:pre;*/
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .esc-emphasis {
@@ -71,6 +86,21 @@ body {
 
 .esc-font-b {
     font-size: 75%
+}
+
+.esc-line-command{
+    text-align: center;
+    font-weight: bold;
+    background: linear-gradient(180deg,
+        rgba(0,0,0,0) calc(50% - 1px),
+        rgba(192,192,192,1) calc(50%),
+        rgba(0,0,0,0) calc(50% + 1px)
+    );
+}
+
+.esc-line-command .command{
+    background-color:white;
+    padding: 1px 10px 1px 10px; 
 }
 
 span {

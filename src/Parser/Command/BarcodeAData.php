@@ -19,4 +19,8 @@ class BarcodeAData extends Command
             $this -> data .= $char;
         }
     }
+
+    public function getData() {
+        return $this -> data;
+    }
 }

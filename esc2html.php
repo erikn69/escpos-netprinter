@@ -11,14 +11,14 @@ use ReceiptPrintHq\EscposTools\Parser\Context\InlineFormatting;
 $debugMode = false;
 $targetFilename = "";
 
-error_log("esc2html starting", 0);
+//error_log("esc2html starting", 0);
 // Usage
 if ($argc < 2) {
     print("Usage: php " . $argv[0] . " [--debug] filename \n"."zéro args");
     exit(1);
 }
-else {
-    if ($argv[1]=='--debug'){ 
+elseif(!isset($_POST["esc"])){
+    if ($argv[1]=='--debug'){
         $debugMode = true;
         if (!isset($argv[2])) {
             print("Usage: php " . $argv[0] . " [--debug] filename ". $argc-1 . " arguments received\n");
@@ -35,33 +35,42 @@ else {
         else $targetFilename = $argv[1]; //The only argument is the filename.
     }
 }
-error_log("Target filename: " . $targetFilename . "", 0);
+if($debugMode) error_log("Target filename: " . $targetFilename . "", 0);
 
 if(!$debugMode) {
     error_reporting(E_ERROR | E_PARSE);  //Deprecation warnings are unwanted except for debugging
 }
 
-// Load in a file
-$fp = fopen($targetFilename, 'rb');
-if ( !$fp ) {
-    error_log("File ". $targetFilename . "not found.");
-    exit(1);
-}  
-
 $parser = new Parser();
-$parser -> addFile($fp);
+if (isset($_POST["esc"])) {
+    // Load from string
+    $parser -> addRaw($argv[2]);
+} else {
+    // Load in a file
+    $fp = fopen($targetFilename, 'rb');
+    if ( !$fp ) {
+        if($debugMode) error_log("File ". $targetFilename . "not found.");
+        exit(1);
+    }
+
+    $parser -> addFile($fp);
+}
 
 // Extract text
 $commands = $parser -> getCommands();
 $formatting = InlineFormatting::getDefault();
 $outp = array();
 $lineHtml = "";
+$return = 0;
 $bufferedImg = null;
 $imgNo = 0;
 $skipLineBreak = false;
 $code2dStorage = new Code2DStateStorage();
+$barcodeHeight = null;
+$barcodeWidth = null;
+$barcodeHri = null;
 
-foreach ($commands as $cmd) {
+foreach ($commands as $i => $cmd) {
     if ($debugMode) error_log("". get_class($cmd) ."", 0); //Output the command class in the debug console
 
     if ($cmd -> isAvailableAs('InitializeCmd')) {
@@ -80,6 +89,23 @@ foreach ($commands as $cmd) {
         $spanContentText = $cmd -> getText($formatting);
         $lineHtml .= span($formatting, $spanContentText);
     }
+    if ($cmd -> isAvailableAs('HorizontalTabCmd')) {
+        $lineHtml .= str_repeat('&nbsp;', 8);
+        continue;
+    }
+    if ($cmd -> isAvailableAs('CarriageReturnCmd') || $cmd -> isAvailableAs('PrintAndReverseFeedLinesCmd')) {
+        // Write fresh block element out to HTML
+        if ($lineHtml === "") {
+            $lineHtml = span($formatting);
+        }
+
+        $classes = getBlockClasses($formatting);
+        $classesStr = implode(" ", $classes);
+        $outp[] = wrapInline("<div class=\"$classesStr\">", "</div>", $lineHtml);
+        $lineHtml = "";
+        $return = $return + ($cmd -> isAvailableAs('CarriageReturnCmd') ? 1 : ($cmd -> getArg() ?? 1));
+        continue;
+    }
     if ($cmd -> isAvailableAs('LineBreak') && $skipLineBreak) {
         $skipLineBreak = false;
     } else if ($cmd -> isAvailableAs('LineBreak')) {
@@ -90,7 +116,24 @@ foreach ($commands as $cmd) {
         // Block-level formatting such as text justification
         $classes = getBlockClasses($formatting);
         $classesStr = implode(" ", $classes);
-        $outp[] = wrapInline("<div class=\"$classesStr\">", "</div>", $lineHtml);
+        $outp[] = wrapInline("<div class=\"$classesStr\"".($return?' style="margin-top:'.($return*-15).'px"':'').">", "</div>", $lineHtml);
+        $return = 0;
+
+        $count = $cmd -> isAvailableAs('PrintAndFeedCmd') || $cmd -> isAvailableAs('PrintAndFeedLinesCmd') ?
+            ($cmd -> getArg() ?? 1) : 1;
+        if(!is_numeric($count) || $count<=0) $count = 1;
+        $count--;
+
+        if($cmd -> isAvailableAs('PrintAndFeedCmd') || $cmd -> isAvailableAs('PrintAndFeedLinesCmd')){
+            $count = $cmd -> isAvailableAs('PrintAndFeedCmd') || $cmd -> isAvailableAs('PrintAndFeedLinesCmd') ?
+                ($cmd -> getArg() ?? 1) : 1;
+            if(!is_numeric($count) || $count<=0) $count = 1;
+            $count--;
+            $lineHtml = "&nbsp;";
+            for ($i = 0; $i < $count; $i++){
+                $outp[] = wrapInline("<div class=\"$classesStr\">", "</div>", $lineHtml);
+            }
+        }
         $lineHtml = "";
     }
     if ($cmd -> isAvailableAs('GraphicsDataCmd') || $cmd -> isAvailableAs('GraphicsLargeDataCmd')) {
@@ -106,12 +149,37 @@ foreach ($commands as $cmd) {
         }
     } else if ($cmd -> isAvailableAs('ImageContainer')) {
         // Append and flush buffer
-        $classes = getBlockClasses($formatting);
-        $classesStr = implode(" ", $classes);
-        $outp[] = wrapInline("<div class=\"$classesStr\">", "</div>", imgAsDataUrl($cmd));
-        $lineHtml = "";
+        if ($lineHtml && !(($commands[$i - 1] ?? null) ?-> isAvailableAs('ImageContainer') || ($commands[$i - 2] ?? null) ?-> isAvailableAs('ImageContainer'))) {
+            $classes = getBlockClasses($formatting);
+            $classesStr = implode(" ", $classes);
+            $outp[] = wrapInline("<div class=\"$classesStr\">", "</div>", $lineHtml);
+            $lineHtml = "";
+        }
+        $lineHtml .= imgAsDataUrl($cmd);
         // Should load into print buffer and print next line break, but we print immediately, so need to skip the next line break.
-        $skipLineBreak = true;
+        if (($commands[$i + 1] ?? null) ?-> isAvailableAs('ImageContainer') || ($commands[$i + 2] ?? null) ?-> isAvailableAs('ImageContainer')) {
+            $skipLineBreak = true;
+        }
+    }
+    if ($cmd -> isAvailableAs('PulseCmd') || $cmd -> isAvailableAs('PulseOtherCmd')) {
+        $outp[] = wrapInline("<div class=\"esc-line-command\">", "</div>", "<span class=\"command\">CASH REGISTER PULSE</span>");
+    }
+    else if ($cmd -> isAvailableAs('PowerOffCmd')) {
+        $outp[] = wrapInline("<div class=\"esc-line-command\">", "</div>", "<span class=\"command\">POWER OFF PRINTER</span>");
+    }
+    else if ($cmd -> isAvailableAs('BuzzerCmd')) {
+        $outp[] = wrapInline("<div class=\"esc-line-command\">", "</div>", "<span class=\"command\">BUZZER</span>");
+    }
+    else if ($cmd -> isAvailableAs('FeedAndCutCmd') || $cmd -> isAvailableAs('FeedAndCutOldCmd')) {
+        $lines = $cmd -> getArg();
+        if(!is_numeric($lines) || $lines<=0) $lines = 1;
+
+        if ($lines == 27)
+            $lines = $lines ? " WITH PARTIAL CUT " /*.($cmd -> isAvailableAs('FeedAndCutOldCmd')?'O':'N')*/ : '';
+        else
+            $lines = $lines ? " WITH $lines LINE(S) FEED " /*.($cmd -> isAvailableAs('FeedAndCutOldCmd')?'O':'N')*/ : '';
+
+        $outp[] = wrapInline("<div class=\"esc-line-command\">", "</div>", "<span class=\"command\">PAPER CUT $lines</span>");
     }
     if ($cmd -> isAvailableAs('Code2DDataCmd')){
         $sub = $cmd -> subCommand();
@@ -121,7 +189,7 @@ foreach ($commands as $cmd) {
             error_log("Data size:". $sub->getDataSize() ."",0);
             error_log("Data: " . $sub->get_data() ."",0);
         }
-        if($sub->isAvailableAs('QRCodeSubCommand')){ 
+        if($sub->isAvailableAs('QRCodeSubCommand')){
             switch ($sub->get_fn()) {
                 case 65:  //set model
                     $code2dStorage->setQRModel($sub->get_data());
@@ -139,11 +207,11 @@ foreach ($commands as $cmd) {
                     $qrcodeURI = $code2dStorage->getQRCodeBase64URI();
 
                     if ($qrcodeURI == Code2DStatestorage::NO_DATA_ERROR){
-                        error_log("Warning:  QR code print ordered before contents stored.",0);
+                        if($debugMode) error_log("Warning:  QR code print ordered before contents stored.",0);
                         $imagefile = file_get_contents(__DIR__.'/NoQR.JPG');
                         if ($imagefile === false) {
                             #To make the netprinter work, provide a full path to the image file
-                            error_log("ERROR:  NoQR.JPG image not found in ".__DIR__, 0);
+                            if($debugMode) error_log("ERROR:  NoQR.JPG image not found in ".__DIR__, 0);
                             $imageData = '';
                             $imgSrc = '';
                         }
@@ -158,7 +226,6 @@ foreach ($commands as $cmd) {
                         $qrcodeData = $code2dStorage->getQRCodeData();
                         $outp[] = "<div class=\"esc-line esc-justify-center\"><img class=\"esc-bitimage\" src=\"$qrcodeURI\" alt=\"$qrcodeData\" /></div>";
                     }
-                    
                     break;
                 case 82:  //Transmit size information of symbol storage data.
                     # TODO: maybe implement by printing the info?
@@ -166,16 +233,74 @@ foreach ($commands as $cmd) {
             }
         }
     }
+    if ($cmd -> isAvailableAs('SetBarcodeHeightCmd')) {
+        $barcodeHeight = $cmd -> getArg();
+    } else if ($cmd -> isAvailableAs('SetBarcodeWidthCmd')) {
+        $barcodeWidth = $cmd -> getArg();
+    } else if ($cmd -> isAvailableAs('SelectHriPrintPosCmd')) {
+        $barcodeHri = $cmd -> getArg();
+    } else if ($cmd -> isAvailableAs('PrintBarcodeCmd')) {
+        $types = [
+            0  => 'TypeUpcA',
+            65 => 'TypeUpcA',
+            1  => 'TypeUpcE',
+            66 => 'TypeUpcE',
+            2  => 'TypeEan13',
+            67 => 'TypeEan13',
+            3  => 'TypeEan8',
+            68 => 'TypeEan8',
+            4  => 'TypeCode39',
+            69 => 'TypeCode39',
+            6  => 'TypeCodabar',
+            71 => 'TypeCodabar',
+            72 => 'TypeCode93',
+            73 => 'TypeCode128',
+        ];
+        $type = $types[$cmd->getType()] ?? null;
+        $data = $cmd -> subCommand()->getData();
+        $classes = getBlockClasses($formatting);
+        $classesStr = implode(" ", $classes);
+        if ($type){
+            $renderer = new \Picqer\Barcode\Renderers\PngRenderer();
+            $renderer->setBackgroundColor([255, 255, 255]);
+            if (!class_exists(\Imagick::class)) {
+                $renderer->useGd();
+            } else {
+                $renderer->useImagick();
+            }
+            $type = '\\Picqer\\Barcode\\Types\\' . $type;
+            $barcode = (new $type)->getBarcode($data);
+            $imgSrc = base64_encode($renderer->render($barcode, $barcodeWidth ?? $barcode->getWidth(), $barcodeHeight ?? 40));
+            $lineHtml = "<img class=\"esc-bitimage\" src=\"data:image/jpeg;base64,{$imgSrc}\" alt=\"{$data}\" />";
+            
+        } else {
+            $classesStr .= ' esc-line-command';
+            $lineHtml = "<span class=\"command\">BARCODE {$cmd->getType()} (NO PREVIEW)" . (in_array($barcodeHri, [1, 2, 3]) ? '' : " [$data]") . "</span>";
+        }
+        if (in_array($barcodeHri, [1, 3])) {
+            $lineHtml = "<div>$data</div>" . $lineHtml;
+        }
+        if (in_array($barcodeHri, [2, 3])) {
+            $lineHtml = $lineHtml . "<div>$data</div>";
+        }
+        $outp[] = wrapInline("<div class=\"$classesStr\">", "</div>", wrapInline("<span class=\"esc-justify-center\">", "</span>", $lineHtml));
+        $lineHtml = ""; // flush buffer
+        $barcodeWidth = $barcodeHeight = $barcodeHri = null;
+    }
 }
 
 // Stuff we need in the HTML header
 const CSS_FILE = __DIR__ . "/src/resources/esc2html.css";
+$width = $width ?? '80mm';
 $metaInfo = array_merge(
     array(
         "<meta charset=\"UTF-8\">",
         "<style>"
     ),
-    explode("\n", trim(file_get_contents(CSS_FILE))),
+    [
+        str_replace([': ',' {','  ',chr(13),chr(10)],[':','{','','',''],trim(file_get_contents(CSS_FILE))),
+        ".esc-receipt{width:{$width};min-width:{$width};overflow:hidden;}"
+    ],
     array(
         "</style>"
     )
@@ -187,7 +312,7 @@ $head = wrapBlock("<head>", "</head>", $metaInfo);
 $body = wrapBlock("<body>", "</body>", $receipt);
 $html = wrapBlock("<html>", "</html>", array_merge($head, $body), false);
 echo "<!DOCTYPE html>\n" . implode("\n", $html) . "\n";
-error_log("'". $targetFilename . "' converted to HTML",0);
+if($debugMode) error_log("'". $targetFilename . "' converted to HTML",0);
 
 
 function imgAsDataUrl($bufferedImg)

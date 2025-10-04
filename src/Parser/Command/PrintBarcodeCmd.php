@@ -24,4 +24,14 @@ class PrintBarcodeCmd extends EscposCommand
         }
         return $this -> subCommand -> addChar($char);
     }
+
+    public function subCommand()
+    {
+        // TODO rename and take getSubCommand() name.
+        return $this -> subCommand;
+    }
+
+    public function getType() {
+        return $this -> m;
+    }
 }

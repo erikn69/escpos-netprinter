@@ -33,7 +33,10 @@ class TextCmd extends Command implements TextContainer
     public function getText(InlineFormatting $context = new InlineFormatting): array|bool|string  
     {
         $text = "";
-        if($context->charCodeTable == "auto"){
+        if(mb_detect_encoding((string) $this->str, 'UTF-8', true)){
+            $text = $this->str;
+        }
+        elseif($context->charCodeTable == "auto"){
             # This charset is unknown to MbWrapper, so we try mbstring's "auto" as a last resort.
             $text = mb_convert_encoding(string: $this->str, to_encoding: "UTF-8", from_encoding: "auto");
         }

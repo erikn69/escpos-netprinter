@@ -20,4 +20,8 @@ class BarcodeBData extends Command
         }
         return false;
     }
+
+    public function getData() {
+        return $this -> data;
+    }
 }

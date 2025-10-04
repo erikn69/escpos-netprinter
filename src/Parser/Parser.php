@@ -33,4 +33,11 @@ class Parser
             }
         }
     }
+
+    public function addRaw($fp)
+    {
+        for ($i = 0, $z = strlen($fp); $i < $z; $i++) {
+            $this -> printout -> addChar($fp[$i]);
+        }
+    }
 }

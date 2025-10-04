@@ -23,4 +23,19 @@ class CommandThreeArgs extends EscposCommand
         }
         return false;
     }
+
+    public function getArg1()
+    {
+        return $this -> arg1;
+    }
+
+    public function getArg2()
+    {
+        return $this -> arg2;
+    }
+
+    public function getArg3()
+    {
+        return $this -> arg3;
+    }
 }

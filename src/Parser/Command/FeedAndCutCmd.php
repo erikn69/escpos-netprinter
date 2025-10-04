@@ -22,4 +22,9 @@ class FeedAndCutCmd extends Command implements LineBreak
             return true;
         }
     }
+    
+    public function getArg()
+    {
+        return $this -> arg;
+    }
 }

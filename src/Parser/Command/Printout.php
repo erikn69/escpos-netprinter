@@ -53,12 +53,14 @@ class Printout extends Command
             'E' => 'EnableEmphasisCmd',
             'p' => 'PulseCmd', 
             't' => 'SelectCharCodeCmd',
+            'i' => 'FeedAndCutOldCmd',
             "\x20" => 'CommandOneArg' //ESC SP, which we do not implement so we parse it as a generic
         ),
         GS => array(
             '\\' => 'SetRelativeVerticalPrintPositionCmd', // low and high values for vertrical print position (page mode)
             '!' => 'SelectCharacterSizeCmd',
             'V' => 'FeedAndCutCmd',
+            'e' => 'FeedAndCutCmd',
             'b' => 'EnableSmoothingCmd',
             'B' => 'EnableBlackWhiteInvertCmd',
             '(' => array(
@@ -93,15 +95,16 @@ class Printout extends Command
         ),
         FS => array(
             '.' => 'CancelKanjiCharacterMode',
-            'C' => 'SelectKanjiCharacterCode'
+            'C' => 'SelectKanjiCharacterCode',
+            "\xc0" => 'BuzzerCmd',
         ),
         DLE => array( //DLE groups "real-time" commands like "sound buzzer" or "feed paper".
             //Since none of those change the printed result, we parse them as generics.
             "\x04" => 'CommandTwoArgs', //EOT
             "\x05" => 'CommandOneArg', //ENQ
             "\x14" => array( //DC4
-                "\x01" => 'CommandTwoArgs', //Generate pulse
-                "\x02" => 'CommandTwoArgs', //Printer power-off
+                "\x01" => 'PulseOtherCmd', //Generate pulse
+                "\x02" => 'PowerOffCmd', //Printer power-off
                 "\x03" => 'CommandFiveArgs', //Real-time buzzer
                 "\x07" => 'CommandOneArg', //Real-time status transmission
                 "\x08\x01\x03\x14\x01\x06\x02" => 'CommandOneArg' //Clear buffers. NOTE the only possible arg here is '\x08'
@@ -197,6 +200,6 @@ class Printout extends Command
                 $cmdStack[] = $s;
             }
         }
-        fwrite(STDERR, "WARNING: Unknown command " . implode(' ', $cmdStack) . "\n");
+        //fwrite(STDERR, "WARNING: Unknown command " . implode(' ', $cmdStack) . "\n");
     }
 }
