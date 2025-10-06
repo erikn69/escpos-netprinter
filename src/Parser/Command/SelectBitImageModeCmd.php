@@ -71,17 +71,23 @@ class SelectBitImageModeCmd extends EscposCommand implements ImageContainer
         $im -> readImageBlob($pbmBlob, 'pbm');
         $im -> rotateImage('#fff', 90.0);
         $im -> flopImage();
+        $im -> negateImage(true);
         return $im -> getImageBlob();
     }
-    
+
     public function asPng()
     {
+        if (!class_exists(Imagick::class)) {
+            return $this->asPngUsingGD($this -> asReflectedPbm());
+        }
+
         // Just a format conversion PBM -> PNG
         $pbmBlob = $this -> asPbm();
         $im = new Imagick();
         $im -> readImageBlob($pbmBlob, 'pbm');
-        $im->setResourceLimit(6, 1); // Prevent libgomp1 segfaults, grumble grumble.
+        $im->setResourceLimit(6, 1); // Prevent libgomp1 segfaults, grumble grumble.        
         $im -> setFormat('png');
+        $im -> negateImage(true);
         return $im -> getImageBlob();
     }
 }
